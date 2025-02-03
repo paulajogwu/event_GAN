@@ -1,0 +1,416 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+/// Always after the prisma-client-js generator
+generator json {
+  provider = "prisma-json-types-generator"
+  // namespace = "PrismaJson"
+  // clientOutput = "<finds it automatically>"
+  // (./ -> relative to schema, or an importable path to require() it)
+}
+
+
+generator zod {
+  provider = "zod-prisma-types"
+  // output   = "./zod" // Specify the output directory for your Zod schemas
+}
+
+
+datasource db {
+    provider = "mongodb"
+    // NOTE: When using mysql or sqlserver, uncomment the  annotations in model Account below
+    // Further reading:
+    // https://next-auth.js.org/adapters/prisma#create-the-prisma-schema
+    // https://www.prisma.io/docs/reference/api-reference/prisma-schema-reference#string
+    url      = env("DATABASE_URL")
+}
+
+
+// Necessary for Next auth
+model Account {
+    id                       String      @id @default(auto()) @map("_id") @db.ObjectId
+    userId                   String @db.ObjectId
+    type                     String
+    provider                 String
+    providerAccountId        String
+    refresh_token            String? 
+    access_token             String? 
+    expires_at               Int?
+    token_type               String?
+    scope                    String?
+    id_token                 String? 
+    session_state            String?
+    user                     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    refresh_token_expires_in Int?
+
+    @@unique([provider, providerAccountId])
+}
+
+model Session {
+    id           String   @id @default(auto()) @map("_id") @db.ObjectId
+    sessionToken String   @unique
+    userId       String @db.ObjectId
+    expires      DateTime
+    user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  name          String?
+  country       String?
+  state         String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  zipCode       String?
+  password      String?
+  accounts      Account[]
+  sessions      Session[]
+  bio           String?
+  isNewUser     Boolean? @default(false)
+  role          Roles     @default(USER)
+  onboardingStatus OnboardingStatus @default(NOT_STARTED)
+  events        Event[]
+  vendor        Vendor?
+  ratings       Rating[]
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  STEP_1
+  STEP_2
+  STEP_3
+  COMPLETED
+}
+
+model Vendor {
+id            String    @id @default(auto()) @map("_id") @db.ObjectId
+businessName String?
+description String?
+availability  Json?
+category      VendorCategory?
+services      Service[]
+products      Product[]
+images String[]
+averageRating Float?
+totalRatings  Int?       @default(0)
+ratings       Rating[]
+user   User   @relation(fields: [userId], references: [id])
+userId String @db.ObjectId @unique
+}
+
+model VerificationToken {
+    id         String   @id @default(auto()) @map("_id") @db.ObjectId
+    identifier String 
+    token      String   @unique
+    expires    DateTime
+
+    @@unique([identifier, token])
+}
+
+model PasswordResetToken {
+  id      String   @id @default(auto()) @map("_id") @db.ObjectId
+  email   String
+  token   String   @unique
+  expires DateTime
+
+  @@unique([email, token])
+}
+
+
+model Service {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  price      Float
+  pricingModel PricingModel
+  embeddedLookupId String
+  status PublishStatus @default(PUBLIC)
+  eventIDs String[] @db.ObjectId
+  vendorId String @db.ObjectId
+  vendor     Vendor   @relation(fields: [vendorId], references: [id],onDelete: Cascade)
+  eventService EventService[]
+  discounts   ServiceDiscount[]
+  tags String[]
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  @@index([vendorId])
+}
+
+model Product {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  description String?
+  price      Float
+  isConsumable Boolean?
+  onRent Boolean?
+  pricingModel PricingModel
+  embeddedLookupId String
+  status PublishStatus @default(PUBLIC)
+  vendorId String @db.ObjectId
+  vendor     Vendor   @relation(fields: [vendorId], references: [id],onDelete: Cascade)
+  eventProduct EventProduct[]
+  images String[]
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  @@index([vendorId])
+}
+
+
+enum PricingModel {
+  FIXED_PRICE
+  HOURLY_RATE
+  PER_PERSON
+}
+model Event{
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  description  String
+  guestCount Int?
+  type String
+  startDate   DateTime?
+  endDate     DateTime?
+  totalPrice Float?
+  completionRate Int?
+  status EventStatusEnum @default(PENDING)
+  location String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  customId String? @map("id")
+  bookings        Booking[]
+  eventService EventService[]
+  eventProduct EventProduct[]
+  user User @relation(fields: [userId], references: [id] )
+  userId String @db.ObjectId 
+  
+
+  @@index([userId])
+}
+
+model EventService {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  event     Event    @relation(fields: [eventId], references: [id])
+  service   Service  @relation(fields: [serviceId], references: [id])
+  status    ServiceBookingStatus @default(PENDING)
+  eventId   String @db.ObjectId
+  serviceId String  @db.ObjectId
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  @@unique([eventId, serviceId]) // Ensures an event can't have duplicate services
+  
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  conversationId String?       @db.ObjectId
+
+  @@index([conversationId])
+}
+
+model EventProduct {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  event     Event?    @relation(fields: [eventId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+  eventId   String? @db.ObjectId
+  productId String  @db.ObjectId
+
+  @@unique([eventId, productId]) // Ensures an event can't have duplicate services
+}
+
+enum ServiceBookingStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+}
+
+
+model Booking {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId   String   @db.ObjectId
+  status    BookingStatusEnum @default(PENDING)
+  paymentId String  @unique @db.ObjectId
+  createdAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event     Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  payment   Payment           @relation(fields: [paymentId], references: [id])
+
+}
+
+model Payment {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  amount        Float
+  currency      String   @default("USD")
+  status        PaymentStatusEnum @default(PENDING)
+  paymentMethod String @default("STRIPE")
+  // StripeID
+  transactionId String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  booking        Booking?
+ 
+}
+
+model Conversation {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  messages      Message[]
+  eventServices EventService[] // Changed to an array
+
+}
+
+model Message {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  text       String
+  senderId   String   @db.ObjectId
+  status     MessageStatusEnum @default(SENT)
+  attachment Json?
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String   @db.ObjectId
+}
+
+enum MessageStatusEnum {
+  SENT
+  DELIVERED
+  READ
+}
+
+
+enum BookingStatusEnum {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum PaymentStatusEnum {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+
+enum VendorCategory {
+  HALLS
+  DECORATORS_FLORISTS
+  ENTERTAINMENT
+  LIGHTING_AV
+  TABLES_CHAIRS_TENTS
+  LOGISTICS_TRANSPORTATION
+  BRANDING_STATIONERIES
+  BAKERS
+  BAR_SERVICES
+  SECURITY_SERVICES
+  FURNITURE_LOUNGE_RENTALS
+  MAKEUP_HAIR
+  EVENT_TECH
+  CATERERS
+}
+
+enum MemberStatusEnum {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+enum EventStatusEnum {
+  COMPLETED
+  PENDING
+  ONGOING
+  DISPUTED
+  TEMP
+}
+
+enum Roles {
+  ADMIN
+  VENDOR
+  USER
+}
+
+enum PublishStatus {
+  DRAFT
+  PUBLIC
+  PRIVATE
+  SCHEDULED
+  ARCHIVED
+}
+
+// Add this new type for discounts
+enum DiscountType {
+  BULK_QUANTITY    // For PER_PERSON pricing model
+  PRICE_THRESHOLD  // For FIXED_PRICE pricing model
+  DURATION         // For HOURLY_RATE pricing model
+  FLAT_RATE        // Fixed amount discount regardless of threshold
+}
+
+// Add this new model for service discounts
+model ServiceDiscount {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  type        DiscountType
+  threshold   Float?      // Optional now since FLAT_RATE doesn't need threshold
+  discount    Float       // Amount of discount
+  isPercentage Boolean    // true for percentage (0-100), false for fixed amount
+  serviceId   String      @db.ObjectId
+  service     Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+}
+
+// Add this new model for ratings
+model Rating {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  rating    Float    // Rating value (e.g., 1-5)
+  comment   String?  // Optional review comment
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendorId  String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String   @db.ObjectId
+
+  @@unique([vendorId, userId]) // Ensures one rating per user per vendor
+  @@index([vendorId])
+  @@index([userId])
+}
+
+model Report {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  serviceId   String   @db.ObjectId
+  vendorId    String   @db.ObjectId
+  reporterId  String   @db.ObjectId
+  issueType   ReportIssueType
+  description String
+  status      ReportStatus @default(PENDING)
+  attachments String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([vendorId])
+  @@index([reporterId])
+}
+
+enum ReportIssueType {
+  FRAUD
+  IMPERSONATION
+  ABUSE
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
